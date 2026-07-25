@@ -3,24 +3,42 @@ pipeline {
 
     stages {
 
-        stage('Informations') {
+        stage('Checkout') {
             steps {
-                echo '=== Welcome to InnoDeploy CI ==='
-                sh 'pwd'
-                sh 'ls -la'
+                checkout scm
             }
         }
 
-        stage('Docker') {
+        stage('Install Dependencies') {
+            steps {
+                dir('apps/backend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                dir('apps/backend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Docker Version') {
             steps {
                 sh 'docker --version'
             }
         }
+    }
 
-        stage('Finished') {
-            steps {
-                echo 'Pipeline completed successfully!'
-            }
+    post {
+        success {
+            echo '✅ Build completed successfully!'
+        }
+
+        failure {
+            echo '❌ Build failed!'
         }
     }
 }
