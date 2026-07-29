@@ -25,6 +25,16 @@ pipeline {
             }
         }
 
+        stage('Build Docker Image') {
+            steps {
+                dir('apps/backend') {
+                    sh '''
+                        docker build -t innodeploy-backend:latest .
+                    '''
+                }
+            }
+        }
+
         stage('Docker Version') {
             steps {
                 sh 'docker --version'
