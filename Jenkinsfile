@@ -40,15 +40,39 @@ pipeline {
                 sh 'docker --version'
             }
         }
-    }
-
-    post {
-        success {
-            echo '✅ Build completed successfully!'
         }
 
-        failure {
-            echo '❌ Build failed!'
+        post {
+            success {
+                echo '✅ Build completed successfully!'
+            }
+
+            failure {
+                echo '❌ Build failed!'
+            }
         }
-    }
+
+        stage('Docker Login') {
+        steps {
+            withCredentials([usernamePassword(
+                credentialsId: 'dockerhub',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS'
+            )]) {
+
+                sh '''
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                    docker tag innodeploy-backend:latest nourhenhachem/innodeploy-backend:latest
+                    docker push nourhenhachem/innodeploy-backend:latest
+                '''
+            }
+        }
 }
