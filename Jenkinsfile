@@ -41,15 +41,17 @@ pipeline {
             }
         }
 
-        stage('Docker Login') {
+        stage('Login to GitHub Container Registry') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
+                    credentialsId: 'github-ghcr',
+                    usernameVariable: 'GITHUB_USER',
+                    passwordVariable: 'GITHUB_TOKEN'
                 )]) {
                     sh '''
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        echo "$GITHUB_TOKEN" | docker login ghcr.io \
+                        -u "$GITHUB_USER" \
+                        --password-stdin
                     '''
                 }
             }
@@ -58,8 +60,8 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 sh '''
-                    docker tag innodeploy-backend:latest nourhenhachem/innodeploy-backend:latest
-                    docker push nourhenhachem/innodeploy-backend:latest
+                    docker tag innodeploy-backend:latest ghcr.io/hachemn/innodeploy-backend:latest
+                    docker push ghcr.io/hachemn/innodeploy-backend:latest
                 '''
             }
         }
