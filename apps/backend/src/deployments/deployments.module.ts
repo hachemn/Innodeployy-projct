@@ -3,8 +3,9 @@ import { DeploymentsController } from './deployments.controller';
 import { DeploymentsService } from './deployments.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ProjectsModule } from '../projects/projects.module';
-import { RepositoriesModule } from 'src/repositories/repositories.module';
-import { JenkinsModule } from 'src/jenkins/jenkins.module';
+import { RepositoriesModule } from '../repositories/repositories.module';
+import { JenkinsModule } from '../jenkins/jenkins.module';
+
 @Module({
   imports: [
     PrismaModule,
@@ -13,6 +14,6 @@ import { JenkinsModule } from 'src/jenkins/jenkins.module';
     JenkinsModule,
   ],
   controllers: [DeploymentsController],
-  providers: [DeploymentsService]
+  providers: [DeploymentsService],
 })
 export class DeploymentsModule {}
