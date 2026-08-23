@@ -13,6 +13,7 @@ pipeline {
             steps {
                 dir('apps/backend') {
                     sh 'npm install'
+                    sh 'npx prisma generate'
                 }
             }
         }
