@@ -1,5 +1,6 @@
 import {
   Body,
+  Get,
   Controller,
   Param,
   ParseIntPipe,
@@ -29,5 +30,14 @@ export class RepositoriesController {
       req.user.id,
       dto,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  findByProject(
+    @Param('projectId', ParseIntPipe) projectId: number,
+    @Request() req,
+  ) {
+    return this.repositoriesService.findByProject(projectId);
   }
 }

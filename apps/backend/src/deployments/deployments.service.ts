@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { DeploymentStatus } from '@prisma/client';
-import { RepositoriesService } from 'src/repositories/repositories.service';
+import { RepositoriesService } from '../repositories/repositories.service';
 import { JenkinsService } from 'src/jenkins/jenkins.service';
 @Injectable()
 export class DeploymentsService {
@@ -27,25 +27,48 @@ async create(projectId: number, userId: number) {
     );
   }
 
-  // Créer le deployment
+  // Créer le deployment → PENDING
   const deployment = await this.prisma.deployment.create({
     data: {
       projectId,
     },
   });
 
-  // Plus tard :
-  // await this.jenkinsService.startPipeline(...)
-
-  //console.log('Repository found:', repository.url);
-  //console.log('Branch:', repository.branch);
-  //console.log('Deployment:', deployment.id);
-  await this.jenkinsService.startPipeline(
+  // PENDING → RUNNING
+  await this.updateStatus(
     deployment.id,
-    repository.url,
-    repository.branch,
+    DeploymentStatus.RUNNING,
   );
-  return deployment;
+
+  try {
+    // Lancer Jenkins
+    await this.jenkinsService.startPipeline(
+      deployment.id,
+      repository.url,
+      repository.branch,
+    );
+
+    // RUNNING → SUCCESS
+    await this.updateStatus(
+      deployment.id,
+      DeploymentStatus.SUCCESS,
+    );
+  } catch (error) {
+    // RUNNING → FAILED
+    await this.updateStatus(
+      deployment.id,
+      DeploymentStatus.FAILED,
+    );
+
+    throw error;
+  }
+
+  // Retourner le deployment avec son statut final
+  return this.prisma.deployment.findUnique({
+    where: {
+      id: deployment.id,
+    },
+  });
 }
 
 

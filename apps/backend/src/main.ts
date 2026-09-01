@@ -5,14 +5,20 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: 'http://localhost:5173',
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,              // enlève les champs inconnus
-      forbidNonWhitelisted: true,  // erreur si champ non autorisé
-      transform: true,             // transforme le body en DTO class
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
   await app.listen(3000);
 }
+
 bootstrap();

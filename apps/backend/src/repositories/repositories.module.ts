@@ -7,5 +7,6 @@ import { ProjectsModule } from '../projects/projects.module';
   imports: [PrismaModule,ProjectsModule ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService],
+  exports: [RepositoriesService],
 })
 export class RepositoriesModule {}
