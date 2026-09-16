@@ -11,6 +11,7 @@ RUN npm install
 # Copier le reste du projet
 COPY . .
 
+RUN npx prisma generate
 # Compiler NestJS
 RUN npm run build
 
