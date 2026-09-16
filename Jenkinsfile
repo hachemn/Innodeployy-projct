@@ -78,11 +78,20 @@ pipeline {
 
                         git add apps/backend/deployment.yaml
                         git commit -m "chore: deploy backend ${BUILD_NUMBER}"
-                        git push origin main
                     '''
+
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-token',
+                        usernameVariable: 'GIT_USERNAME',
+                        passwordVariable: 'GIT_TOKEN'
+                    )]) {
+                        sh '''
+                            git push https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/hachemn/Innodeployy-gitops.git HEAD:main
+                        '''
+                    }
                 }
             }
-        }
+        }       
 
     }
 
