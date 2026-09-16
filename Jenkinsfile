@@ -30,7 +30,7 @@ pipeline {
             steps {
                 dir('apps/backend') {
                     sh '''
-                        docker build -t innodeploy-backend:latest .
+                        docker build -t innodeploy-backend:${BUILD_NUMBER} .
                     '''
                 }
             }
@@ -61,9 +61,26 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 sh '''
-                    docker tag innodeploy-backend:latest ghcr.io/hachemn/innodeploy-backend:latest
-                    docker push ghcr.io/hachemn/innodeploy-backend:latest
+                    docker tag innodeploy-backend:${BUILD_NUMBER} ghcr.io/hachemn/innodeploy-backend:${BUILD_NUMBER}
+                    docker push ghcr.io/hachemn/innodeploy-backend:${BUILD_NUMBER}
                 '''
+            }
+        }
+        stage('Update GitOps Repository') {
+            steps {
+                dir('gitops') {
+                    git branch: 'main',
+                        credentialsId: 'github-token',
+                        url: 'https://github.com/hachemn/Innodeployy-gitops.git'
+
+                    sh '''
+                        sed -i "s|ghcr.io/hachemn/innodeploy-backend:.*|ghcr.io/hachemn/innodeploy-backend:${BUILD_NUMBER}|" apps/backend/deployment.yaml
+
+                        git add apps/backend/deployment.yaml
+                        git commit -m "chore: deploy backend ${BUILD_NUMBER}"
+                        git push origin main
+                    '''
+                }
             }
         }
 
