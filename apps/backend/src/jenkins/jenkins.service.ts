@@ -1,4 +1,7 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import axios from 'axios';
 
 @Injectable()
@@ -20,8 +23,9 @@ export class JenkinsService {
     console.log('======================');
 
     try {
-      const response = await axios.get(
-        `${this.jenkinsUrl}/api/json`,
+      // 1. Get Jenkins CSRF crumb
+      const crumbResponse = await axios.get(
+        `${this.jenkinsUrl}/crumbIssuer/api/json`,
         {
           auth: {
             username: this.jenkinsUser!,
@@ -30,15 +34,37 @@ export class JenkinsService {
         },
       );
 
-      console.log('Jenkins connected successfully');
+      const crumb = crumbResponse.data;
+
+      console.log('Jenkins crumb received');
+
+      // 2. Trigger Jenkins job
+      const response = await axios.post(
+        `${this.jenkinsUrl}/job/InnoDeploy-Backend/build`,
+        null,
+        {
+          auth: {
+            username: this.jenkinsUser!,
+            password: this.jenkinsToken!,
+          },
+          headers: {
+            [crumb.crumbRequestField]: crumb.crumb,
+          },
+        },
+      );
+
+      console.log('Jenkins pipeline triggered');
       console.log('Jenkins status:', response.status);
 
-      return response.data;
+      return {
+        success: true,
+        message: 'Jenkins pipeline triggered successfully',
+      };
     } catch (error) {
-      console.error('Jenkins connection failed:', error);
+      console.error('Jenkins pipeline failed:', error);
 
       throw new InternalServerErrorException(
-        'Unable to connect to Jenkins',
+        'Unable to trigger Jenkins pipeline',
       );
     }
   }
