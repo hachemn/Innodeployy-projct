@@ -53,8 +53,9 @@ export class JenkinsService {
         },
       );
 
-      console.log('Jenkins pipeline triggered');
-      console.log('Jenkins status:', response.status);
+    console.log('Jenkins pipeline triggered');
+    console.log('Jenkins status:', response.status);
+    console.log('Jenkins headers:', response.headers);
 
       return {
         success: true,
