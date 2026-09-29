@@ -40,21 +40,30 @@ async create(projectId: number, userId: number) {
     DeploymentStatus.RUNNING,
   );
 
+
   try {
-    // Lancer Jenkins
-    await this.jenkinsService.startPipeline(
+    // Lancer Jenkins et attendre le résultat réel du build
+    const result = await this.jenkinsService.startPipeline(
       deployment.id,
       repository.url,
       repository.branch,
     );
 
-    // RUNNING → SUCCESS
-    await this.updateStatus(
-      deployment.id,
-      DeploymentStatus.SUCCESS,
-    );
+    // Jenkins SUCCESS → deployment SUCCESS
+    if (result.buildResult === 'SUCCESS') {
+      await this.updateStatus(
+        deployment.id,
+        DeploymentStatus.SUCCESS,
+      );
+    } else {
+      // Jenkins FAILURE / ABORTED / autre → deployment FAILED
+      await this.updateStatus(
+        deployment.id,
+        DeploymentStatus.FAILED,
+      );
+    }
   } catch (error) {
-    // RUNNING → FAILED
+    // Erreur technique → deployment FAILED
     await this.updateStatus(
       deployment.id,
       DeploymentStatus.FAILED,
