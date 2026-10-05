@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,7 +13,20 @@ import { DeploymentsModule } from './deployments/deployments.module';
 import { JenkinsModule } from './jenkins/jenkins.module';
 
 @Module({
-  imports: [PrismaModule, UsersModule, AuthModule, JwtModule, ProjectsModule, RepositoriesModule, DeploymentsModule, JenkinsModule],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+
+    PrismaModule,
+    UsersModule,
+    AuthModule,
+    JwtModule,
+    ProjectsModule,
+    RepositoriesModule,
+    DeploymentsModule,
+    JenkinsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

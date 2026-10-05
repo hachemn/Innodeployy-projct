@@ -29,3 +29,21 @@ export async function getDeployments(projectId: number) {
 
   return response.data;
 }
+
+export async function getDeployment(
+  projectId: number,
+  deploymentId: number
+) {
+  const token = localStorage.getItem("token");
+
+  const response = await api.get(
+    `/projects/${projectId}/deployments/${deploymentId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data;
+}

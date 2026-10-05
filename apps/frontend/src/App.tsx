@@ -8,6 +8,7 @@ import Projects from "./pages/Projects/Projects";
 import ConnectRepository from "./pages/Projects/ConnectRepository";
 import Deploy from "./pages/Deployments/Deploy";
 import DeploymentHistory from "./pages/Deployments/DeploymentHistory";
+import DeploymentDetails from "./pages/Deployments/DeploymentDetails";
 function App() {
   return (
     <BrowserRouter>
@@ -59,6 +60,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DeploymentHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/projects/:projectId/deployments/:deploymentId"
+          element={
+            <ProtectedRoute>
+              <DeploymentDetails />
             </ProtectedRoute>
           }
         />

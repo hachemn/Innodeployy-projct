@@ -68,9 +68,13 @@ enum DeploymentStatus {
   FAILED
 }
 
+
 model Deployment {
   id     Int              @id @default(autoincrement())
   status DeploymentStatus @default(PENDING)
+
+  jenkinsBuildNumber Int?
+  failureReason      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
