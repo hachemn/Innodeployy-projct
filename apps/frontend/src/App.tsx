@@ -9,6 +9,7 @@ import ConnectRepository from "./pages/Projects/ConnectRepository";
 import Deploy from "./pages/Deployments/Deploy";
 import DeploymentHistory from "./pages/Deployments/DeploymentHistory";
 import DeploymentDetails from "./pages/Deployments/DeploymentDetails";
+import Monitoring from "./pages/Monitoring/Monitoring";
 function App() {
   return (
     <BrowserRouter>
@@ -68,6 +69,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DeploymentDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/monitoring"
+          element={
+            <ProtectedRoute>
+              <Monitoring />
             </ProtectedRoute>
           }
         />

@@ -9,6 +9,15 @@ interface Deployment {
   failureReason: string | null;
   createdAt: string;
   updatedAt: string;
+
+  project: {
+    id: number;
+    name: string;
+    repository: {
+      url: string;
+      branch: string;
+    } | null;
+  };
 }
 
 export default function DeploymentDetails() {
@@ -154,6 +163,19 @@ export default function DeploymentDetails() {
 
         <p style={{ marginTop: "12px" }}>
           <strong>Status:</strong> {deployment.status}
+        </p>
+        <p style={{ marginTop: "12px" }}>
+          <strong>Project:</strong> {deployment.project.name}
+        </p>
+
+        <p style={{ marginTop: "12px" }}>
+          <strong>Repository:</strong>{" "}
+          {deployment.project.repository?.url || "Not available"}
+        </p>
+
+        <p style={{ marginTop: "12px" }}>
+          <strong>Branch:</strong>{" "}
+          {deployment.project.repository?.branch || "Not available"}
         </p>
 
         <p style={{ marginTop: "12px" }}>

@@ -11,6 +11,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { RepositoriesModule } from './repositories/repositories.module';
 import { DeploymentsModule } from './deployments/deployments.module';
 import { JenkinsModule } from './jenkins/jenkins.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { JenkinsModule } from './jenkins/jenkins.module';
     RepositoriesModule,
     DeploymentsModule,
     JenkinsModule,
+    MonitoringModule
   ],
   controllers: [AppController],
   providers: [AppService],

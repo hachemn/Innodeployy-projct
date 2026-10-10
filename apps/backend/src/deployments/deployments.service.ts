@@ -225,6 +225,13 @@ export class DeploymentsService {
         id: deploymentId,
         projectId,
       },
+      include: {
+        project: {
+          include: {
+            repository: true,
+          },
+        },
+      },
     });
   }
 

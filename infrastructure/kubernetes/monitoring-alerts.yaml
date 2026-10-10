@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: innodeploy-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: innodeploy.rules
+      rules:
+        - alert: InnoDeployBackendDown
+          expr: (sum(kube_pod_status_phase{namespace="innodeploy", phase="Running", pod=~"backend-.*"}) or vector(0)) == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: monitoring
+          annotations:
+            summary: "InnoDeploy backend is down"
+            description: "The InnoDeploy backend has no running pod for more than 2 minutes."
+
+        - alert: InnoDeployBackendHighCPU
+          expr: sum(rate(container_cpu_usage_seconds_total{namespace="innodeploy",container="backend"}[5m])) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            namespace: monitoring
+          annotations:
+            summary: "InnoDeploy backend CPU usage is high"
+            description: "The InnoDeploy backend CPU usage has been above 80% for more than 5 minutes."
+
+        - alert: InnoDeployBackendHighMemory
+          expr: sum(container_memory_working_set_bytes{namespace="innodeploy",container="backend"}) > 500 * 1024 * 1024
+          for: 5m
+          labels:
+            severity: warning
+            namespace: monitoring
+          annotations:
+            summary: "InnoDeploy backend memory usage is high"
+            description: "The InnoDeploy backend memory usage has been above 500 MB for more than 5 minutes."
