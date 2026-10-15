@@ -1,0 +1,128 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'REPOSITORY_URL',
+            defaultValue: '',
+            description: 'Public GitHub repository URL'
+        )
+        string(
+            name: 'BRANCH',
+            defaultValue: 'main',
+            description: 'Git branch to deploy'
+        )
+        string(
+            name: 'APP_NAME',
+            defaultValue: '',
+            description: 'Unique application name'
+        )
+    }
+
+    environment {
+        REGISTRY = 'ghcr.io'
+        GITHUB_OWNER = 'hachemn'
+    }
+
+    stages {
+
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    if (!params.REPOSITORY_URL?.trim()) {
+                        error('REPOSITORY_URL is required.')
+                    }
+
+                    if (!params.BRANCH?.trim()) {
+                        error('BRANCH is required.')
+                    }
+
+                    if (!(params.APP_NAME ==~ /[a-z0-9]([-a-z0-9]*[a-z0-9])?/)) {
+                        error('APP_NAME must contain lowercase letters, numbers, or hyphens.')
+                    }
+
+                    if (!(params.REPOSITORY_URL ==~ /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(\.git)?\/?/)) {
+                        error('Only public GitHub repository URLs are supported.')
+                    }
+                }
+            }
+        }
+
+        stage('Checkout Application') {
+            steps {
+                dir('user-app') {
+                    deleteDir()
+
+                    git branch: params.BRANCH,
+                        url: params.REPOSITORY_URL
+                }
+            }
+        }
+
+        stage('Validate Dockerfile') {
+            steps {
+                dir('user-app') {
+                    sh '''
+                        if [ ! -f Dockerfile ]; then
+                            echo "ERROR: The repository must contain a Dockerfile."
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    docker build \
+                        -t ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:${BUILD_NUMBER} \
+                        -t ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:latest \
+                        user-app
+                '''
+            }
+        }
+
+        stage('Login to GHCR') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-ghcr',
+                        usernameVariable: 'GITHUB_USER',
+                        passwordVariable: 'GITHUB_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        echo "$GITHUB_TOKEN" | docker login ghcr.io \
+                            -u "$GITHUB_USER" \
+                            --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                    docker push ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:${BUILD_NUMBER}
+                    docker push ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:latest
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'User application image built and pushed successfully.'
+            echo 'GitOps update and Kubernetes deployment are not implemented in this first version.'
+        }
+
+        failure {
+            echo 'User application pipeline failed. Check the stage logs.'
+        }
+
+        always {
+            sh 'docker logout ghcr.io || true'
+        }
+    }
+}
