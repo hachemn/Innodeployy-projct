@@ -7,11 +7,13 @@ pipeline {
             defaultValue: '',
             description: 'Public GitHub repository URL'
         )
+
         string(
             name: 'BRANCH',
             defaultValue: 'main',
             description: 'Git branch to deploy'
         )
+
         string(
             name: 'APP_NAME',
             defaultValue: '',
@@ -22,6 +24,7 @@ pipeline {
     environment {
         REGISTRY = 'ghcr.io'
         GITHUB_OWNER = 'hachemn'
+        GITOPS_REPO = 'https://github.com/hachemn/Innodeployy-gitops.git'
     }
 
     stages {
@@ -63,10 +66,14 @@ pipeline {
             steps {
                 dir('user-app') {
                     sh '''
+                        set -eu
+
                         if [ ! -f Dockerfile ]; then
                             echo "ERROR: The repository must contain a Dockerfile."
                             exit 1
                         fi
+
+                        echo "Dockerfile found."
                     '''
                 }
             }
@@ -75,6 +82,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
+                    set -eu
+
                     docker build \
                         -t ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:${BUILD_NUMBER} \
                         -t ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:latest \
@@ -93,9 +102,12 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        echo "$GITHUB_TOKEN" | docker login ghcr.io \
-                            -u "$GITHUB_USER" \
-                            --password-stdin
+                        set +x
+
+                        printf '%s' "$GITHUB_TOKEN" |
+                            docker login "$REGISTRY" \
+                                --username "$GITHUB_USER" \
+                                --password-stdin
                     '''
                 }
             }
@@ -104,17 +116,163 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 sh '''
+                    set -eu
+
                     docker push ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:${BUILD_NUMBER}
                     docker push ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:latest
                 '''
+            }
+        }
+
+        stage('Update GitOps Repository') {
+            steps {
+                dir('gitops') {
+                    deleteDir()
+
+                    git branch: 'main',
+                        credentialsId: 'github-token',
+                        url: 'https://github.com/hachemn/Innodeployy-gitops.git'
+
+                    sh '''
+                        set -eu
+
+                        APP_DIR="apps/user-apps/${APP_NAME}"
+                        APP_SUFFIX="${APP_NAME##*-}"
+
+                        mkdir -p "$APP_DIR"
+
+                        cat > "$APP_DIR/deployment.yaml" <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}
+  namespace: user-apps
+  labels:
+    app: ${APP_NAME}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: web
+          image: ${REGISTRY}/${GITHUB_OWNER}/${APP_NAME}:${BUILD_NUMBER}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+EOF
+
+                        cat > "$APP_DIR/service.yaml" <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${APP_NAME}
+  namespace: user-apps
+spec:
+  type: ClusterIP
+  selector:
+    app: ${APP_NAME}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+EOF
+
+                        cat > "$APP_DIR/ingress.yaml" <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}
+  namespace: user-apps
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: user-app-${APP_SUFFIX}.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${APP_NAME}
+                port:
+                  number: 80
+EOF
+
+                        git add "$APP_DIR"
+
+                        if git diff --cached --quiet; then
+                            echo "No GitOps changes to commit."
+                        else
+                            git \
+                                -c user.name="InnoDeploy Jenkins" \
+                                -c user.email="jenkins@innodeploy.local" \
+                                commit -m "feat: deploy ${APP_NAME} build ${BUILD_NUMBER}"
+                        fi
+                    '''
+
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-token',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_TOKEN'
+                        )
+                    ]) {
+                        sh '''
+                            set +x
+                            set -eu
+
+                            ASKPASS_FILE="$(mktemp)"
+                            trap 'rm -f "$ASKPASS_FILE"' EXIT
+
+                            cat > "$ASKPASS_FILE" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+    *Username*) printf '%s\\n' "$GIT_USERNAME" ;;
+    *Password*) printf '%s\\n' "$GIT_TOKEN" ;;
+    *) exit 1 ;;
+esac
+ASKPASS
+
+                            chmod 700 "$ASKPASS_FILE"
+
+                            export GIT_ASKPASS="$ASKPASS_FILE"
+                            export GIT_TERMINAL_PROMPT=0
+
+                            git push "$GITOPS_REPO" HEAD:main
+                        '''
+                    }
+                }
             }
         }
     }
 
     post {
         success {
-            echo 'User application image built and pushed successfully.'
-            echo 'GitOps update and Kubernetes deployment are not implemented in this first version.'
+            echo 'Application image built and pushed successfully.'
+            echo 'GitOps manifests updated successfully.'
+            echo 'Argo CD should now reconcile the application manifests.'
         }
 
         failure {

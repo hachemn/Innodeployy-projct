@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DeploymentStatus } from '@prisma/client';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
-import { DeploymentStatus } from '@prisma/client';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { JenkinsService } from '../jenkins/jenkins.service';
+
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class DeploymentsService {
@@ -14,17 +22,114 @@ export class DeploymentsService {
     private jenkinsService: JenkinsService,
   ) {}
 
+  /**
+   * Waits for Argo CD and Kubernetes to confirm that the expected
+   * application image has been deployed successfully.
+   */
+  private async verifyDeployment(
+    appName: string,
+    expectedImage: string,
+  ): Promise<void> {
+    const timeout = 5 * 60 * 1000;
+    const pollInterval = 5000;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+      try {
+        // Check Argo CD synchronization and application health.
+        const { stdout: appOutput } = await execFileAsync(
+          '/snap/bin/kubectl',
+          [
+            'get',
+            'application',
+            appName,
+            '-n',
+            'argocd',
+            '-o',
+            'jsonpath={.status.sync.status}{" "}{.status.health.status}',
+          ],
+          { timeout: 10000 },
+        );
+
+        const [syncStatus, healthStatus] = appOutput
+          .trim()
+          .split(/\s+/);
+
+        // Check the deployed image and replica readiness.
+        const { stdout: deploymentOutput } = await execFileAsync(
+          '/snap/bin/kubectl',
+          [
+            'get',
+            'deployment',
+            appName,
+            '-n',
+            'user-apps',
+            '-o',
+            'jsonpath={.spec.template.spec.containers[0].image}{" "}{.spec.replicas}{" "}{.status.updatedReplicas}{" "}{.status.readyReplicas}{" "}{.status.availableReplicas}',
+          ],
+          { timeout: 10000 },
+        );
+
+        const [
+          image,
+          desiredText,
+          updatedText,
+          readyText,
+          availableText,
+        ] = deploymentOutput.trim().split(/\s+/);
+
+        const desired = Number(desiredText);
+        const updated = Number(updatedText);
+        const ready = Number(readyText);
+        const available = Number(availableText);
+
+        const isHealthy =
+          syncStatus === 'Synced' &&
+          healthStatus === 'Healthy' &&
+          image === expectedImage &&
+          desired > 0 &&
+          updated === desired &&
+          ready === desired &&
+          available === desired;
+
+        if (isHealthy) {
+          console.log(
+            `Deployment ${appName} is healthy with image ${expectedImage}`,
+          );
+
+          return;
+        }
+      } catch (error) {
+        // The application or Deployment may not exist yet.
+        // Continue polling until the timeout expires.
+        console.log(
+          `Waiting for application ${appName} to become healthy...`,
+        );
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, pollInterval),
+      );
+    }
+
+    throw new Error(
+      `Deployment ${appName} did not become healthy with image ${expectedImage} within 5 minutes.`,
+    );
+  }
+
+  /**
+   * Creates a deployment, triggers Jenkins, and verifies the
+   * resulting deployment in Argo CD and Kubernetes.
+   */
   async create(projectId: number, userId: number) {
-    console.log('🚀 CREATE DEPLOYMENT STARTED');
+    console.log('CREATE DEPLOYMENT STARTED');
     console.log('Project ID:', projectId);
     console.log('User ID:', userId);
 
-    // 1. Verify project ownership
+    // Verify that the project belongs to the current user.
     await this.projectsService.findOne(projectId, userId);
 
-    console.log('✅ Project ownership verified');
-
-    // 2. Get repository
+    // Retrieve the repository associated with this project.
     const repository =
       await this.repositoriesService.findByProject(projectId);
 
@@ -34,89 +139,66 @@ export class DeploymentsService {
       );
     }
 
-    console.log('✅ Repository found:', repository.url);
-    console.log('Branch:', repository.branch);
-
-    // 3. Create deployment
+    // Create the deployment record.
     const deployment = await this.prisma.deployment.create({
       data: {
         projectId,
+        status: DeploymentStatus.PENDING,
       },
     });
 
-    console.log('✅ Deployment created:', deployment.id);
-
-    // 4. PENDING → RUNNING
     await this.updateStatus(
       deployment.id,
       DeploymentStatus.RUNNING,
     );
 
-    console.log(
-      '✅ Deployment status changed to RUNNING',
-    );
-
     try {
-      // 5. Start Jenkins and wait for result
-      const result = await this.jenkinsService.startPipeline(
-        deployment.id,
-        repository.url,
-        repository.branch,
-      );
+      // Generate an application name consistent with the
+      // Kubernetes resources created by Jenkins.
+      const repositoryName =
+        repository.url.split('/').pop()?.replace(/\.git$/, '') ||
+        `app-${projectId}`;
 
-      console.log('✅ Jenkins pipeline finished');
-      console.log('Jenkins result:', result);
+      const appSlug =
+        repositoryName
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 50) || 'app';
 
-      // 6. Save Jenkins build number
-      console.log(
-        '💾 Saving Jenkins build number:',
-        result.buildNumber,
-      );
+      const appName = `${appSlug}-${projectId}`;
 
-      const updatedDeployment =
-        await this.prisma.deployment.update({
-          where: {
-            id: deployment.id,
-          },
-          data: {
-            jenkinsBuildNumber: result.buildNumber,
-          },
-        });
+      console.log('Application name:', appName);
+      console.log('Repository:', repository.url);
+      console.log('Branch:', repository.branch);
 
-      console.log(
-        '✅ Jenkins build number saved:',
-        updatedDeployment.jenkinsBuildNumber,
-      );
-
-      // 7. Update deployment status
-      if (result.buildResult === 'SUCCESS') {
-        console.log(
-          '✅ Jenkins SUCCESS → setting deployment SUCCESS',
+      // Trigger the user application pipeline in Jenkins.
+      const result =
+        await this.jenkinsService.startUserAppPipeline(
+          deployment.id,
+          repository.url,
+          repository.branch,
+          appName,
         );
 
-        await this.prisma.deployment.update({
-          where: {
-            id: deployment.id,
-          },
-          data: {
-            status: DeploymentStatus.SUCCESS,
-            failureReason: null,
-          },
-        });
+      console.log('Jenkins build number:', result.buildNumber);
+      console.log('Jenkins build result:', result.buildResult);
 
-        console.log(
-          '✅ Deployment status changed to SUCCESS',
-        );
-      } else {
-        console.log(
-          '❌ Jenkins result is not SUCCESS:',
-          result.buildResult,
-        );
+      // Save the Jenkins build number.
+      await this.prisma.deployment.update({
+        where: {
+          id: deployment.id,
+        },
+        data: {
+          jenkinsBuildNumber: result.buildNumber,
+        },
+      });
 
+      // A failed Jenkins build must never be marked successful.
+      if (result.buildResult !== 'SUCCESS') {
         const failureReason =
-          result.buildResult
-            ? `Jenkins build finished with status: ${result.buildResult}`
-            : 'Jenkins build failed without a result.';
+          result.message ||
+          `Jenkins build failed with status: ${result.buildResult}`;
 
         await this.prisma.deployment.update({
           where: {
@@ -128,26 +210,46 @@ export class DeploymentsService {
           },
         });
 
-        console.log(
-          '❌ Deployment status changed to FAILED',
-        );
-
-        console.log(
-          '❌ Failure reason:',
-          failureReason,
-        );
+        return await this.prisma.deployment.findUnique({
+          where: {
+            id: deployment.id,
+          },
+        });
       }
-    } catch (error) {
-      console.error(
-        '🔥 ERROR INSIDE DEPLOYMENT CREATE:',
-        error,
+
+      // Jenkins succeeded. Now verify that Argo CD has applied
+      // the exact image built by this Jenkins run.
+      const expectedImage =
+        `ghcr.io/hachemn/${appName}:${result.buildNumber}`;
+
+      await this.verifyDeployment(
+        appName,
+        expectedImage,
       );
 
+      // Mark SUCCESS only after Kubernetes confirms readiness.
+      await this.prisma.deployment.update({
+        where: {
+          id: deployment.id,
+        },
+        data: {
+          status: DeploymentStatus.SUCCESS,
+          failureReason: null,
+        },
+      });
+    } catch (error) {
       const failureReason =
         error instanceof Error
           ? error.message
-          : 'An unexpected error occurred during deployment.';
+          : 'An unexpected deployment error occurred';
 
+      console.error(
+        `Deployment ${deployment.id} failed:`,
+        failureReason,
+      );
+
+      // Persist the failure so it remains visible in deployment
+      // history, including when the health check times out.
       await this.prisma.deployment.update({
         where: {
           id: deployment.id,
@@ -158,47 +260,22 @@ export class DeploymentsService {
         },
       });
 
-      console.log(
-        '❌ Deployment status changed to FAILED',
-      );
-
-      console.log(
-        '❌ Failure reason:',
-        failureReason,
-      );
-
       throw error;
     }
 
-    // 8. Get final deployment
-    console.log(
-      '📦 Fetching final deployment:',
-      deployment.id,
-    );
-
-    const finalDeployment =
-      await this.prisma.deployment.findUnique({
-        where: {
-          id: deployment.id,
-        },
-      });
-
-    console.log(
-      '✅ FINAL DEPLOYMENT:',
-      finalDeployment,
-    );
-
-    return finalDeployment;
+    // Return the final database record.
+    return await this.prisma.deployment.findUnique({
+      where: {
+        id: deployment.id,
+      },
+    });
   }
 
-  async findAll(
-    projectId: number,
-    userId: number,
-  ) {
-    await this.projectsService.findOne(
-      projectId,
-      userId,
-    );
+  /**
+   * Returns deployment history for a project owned by the user.
+   */
+  async findAll(projectId: number, userId: number) {
+    await this.projectsService.findOne(projectId, userId);
 
     return this.prisma.deployment.findMany({
       where: {
@@ -210,15 +287,15 @@ export class DeploymentsService {
     });
   }
 
+  /**
+   * Returns one deployment and its project/repository details.
+   */
   async findOne(
     projectId: number,
     deploymentId: number,
     userId: number,
   ) {
-    await this.projectsService.findOne(
-      projectId,
-      userId,
-    );
+    await this.projectsService.findOne(projectId, userId);
 
     return this.prisma.deployment.findFirst({
       where: {
@@ -235,6 +312,9 @@ export class DeploymentsService {
     });
   }
 
+  /**
+   * Updates a deployment's status.
+   */
   async updateStatus(
     deploymentId: number,
     status: DeploymentStatus,
