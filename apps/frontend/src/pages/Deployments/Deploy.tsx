@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { createDeployment } from "../../services/deployment.service";
-
+import {
+  createDeployment,
+  getDeployments,
+} from "../../services/deployment.service";
 interface Deployment {
   id: number;
   status: string;
@@ -17,7 +19,23 @@ export default function Deploy() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [deployment, setDeployment] = useState<Deployment | null>(null);
+  useEffect(() => {
+    async function loadLatestDeployment() {
+      if (!projectId) return;
 
+      try {
+        const data = await getDeployments(Number(projectId));
+
+        if (data.length > 0) {
+          setDeployment(data[0]);
+        }
+      } catch (error) {
+        console.error("Unable to load the latest deployment:", error);
+      }
+    }
+
+    loadLatestDeployment();
+  }, [projectId]);
   async function handleDeploy() {
     if (!projectId) {
       setMessage("Project ID is missing.");
@@ -49,8 +67,17 @@ export default function Deploy() {
       } else {
         setMessage(`Deployment status: ${result.status}`);
       }
-    } catch (error) {
-      console.error("🔥 Deployment error:", error);
+    } catch (error: unknown) {
+        console.error("🔥 Deployment error:", error);
+
+      if (error && typeof error === "object" && "response" in error) {
+        console.error(
+          "📡 API error response:",
+          (error as { response?: { status?: number; data?: unknown } }).response
+        );
+      } else {
+        console.error("No HTTP response received. Check the network connection.");
+      }
 
       setMessage(
         "Unable to complete the deployment request. Please try again."
@@ -237,7 +264,7 @@ export default function Deploy() {
         </div>
 
         {/* Result */}
-        {message && (
+        {(message || deployment) && (
           <div
             style={{
               marginTop: "25px",
