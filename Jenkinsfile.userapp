@@ -19,6 +19,12 @@ pipeline {
             defaultValue: '',
             description: 'Unique application name'
         )
+
+        choice(
+            name: 'DEPLOY_TARGET',
+            choices: ['local', 'aws'],
+            description: 'Deployment environment'
+        )
     }
 
     environment {
@@ -136,7 +142,11 @@ pipeline {
                     sh '''
                         set -eu
 
-                        APP_DIR="apps/user-apps/${APP_NAME}"
+                        if [ "$DEPLOY_TARGET" = "aws" ]; then
+                            APP_DIR="apps/user-apps-aws/${APP_NAME}"
+                        else
+                            APP_DIR="apps/user-apps/${APP_NAME}"
+                        fi
                         APP_SUFFIX="${APP_NAME##*-}"
 
                         mkdir -p "$APP_DIR"
@@ -199,7 +209,28 @@ spec:
       protocol: TCP
 EOF
 
-                        cat > "$APP_DIR/ingress.yaml" <<EOF
+                        if [ "$DEPLOY_TARGET" = "aws" ]; then
+                            cat > "$APP_DIR/ingress.yaml" <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}
+  namespace: user-apps
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${APP_NAME}
+                port:
+                  number: 80
+EOF
+                        else
+                            cat > "$APP_DIR/ingress.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -219,6 +250,7 @@ spec:
                 port:
                   number: 80
 EOF
+                        fi
 
                         git add "$APP_DIR"
 
