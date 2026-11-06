@@ -25,6 +25,12 @@ pipeline {
             choices: ['local', 'aws'],
             description: 'Deployment environment'
         )
+
+        string(
+            name: 'APP_HOST',
+            defaultValue: '',
+            description: 'Unique AWS application hostname'
+        )
     }
 
     environment {
@@ -52,6 +58,11 @@ pipeline {
 
                     if (!(params.REPOSITORY_URL ==~ /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(\.git)?\/?/)) {
                         error('Only public GitHub repository URLs are supported.')
+                    }
+
+                    if (params.DEPLOY_TARGET == 'aws' &&
+                        !(params.APP_HOST ==~ /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/)) {
+                        error('A valid APP_HOST is required for AWS deployments.')
                     }
                 }
             }
@@ -219,7 +230,8 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - http:
+    - host: ${APP_HOST}
+      http:
         paths:
           - path: /
             pathType: Prefix

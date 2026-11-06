@@ -75,6 +75,7 @@ model Deployment {
 
   jenkinsBuildNumber Int?
   failureReason      String?
+  url                String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

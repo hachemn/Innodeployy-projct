@@ -160,6 +160,8 @@ export class JenkinsService {
     repositoryUrl: string,
     branch: string,
     appName: string,
+    deployTarget: string = 'local',
+    appHost?: string,
   ) {
     const jobName = 'InnoDeploy-UserApps';
 
@@ -198,6 +200,8 @@ export class JenkinsService {
             REPOSITORY_URL: repositoryUrl,
             BRANCH: branch,
             APP_NAME: appName,
+            DEPLOY_TARGET: deployTarget,
+            APP_HOST: appHost || '',
           },
           headers: {
             [crumb.crumbRequestField]: crumb.crumb,

@@ -13,6 +13,7 @@ import { DeploymentsService } from './deployments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Patch } from '@nestjs/common';
 import { UpdateDeploymentStatusDto } from './dto/update-deployment-status.dto';
+import { CreateDeploymentDto } from './dto/create-deployment.dto';
 @Controller('projects/:projectId/deployments')
 export class DeploymentsController {
   constructor(
@@ -24,10 +25,12 @@ export class DeploymentsController {
   create(
     @Param('projectId', ParseIntPipe) projectId: number,
     @Request() req,
+    @Body() dto: CreateDeploymentDto,
   ) {
     return this.deploymentsService.create(
       projectId,
       req.user.id,
+      dto.deployTarget ?? 'local',
     );
   }
 

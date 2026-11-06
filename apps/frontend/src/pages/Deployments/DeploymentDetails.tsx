@@ -7,6 +7,7 @@ interface Deployment {
   status: string;
   jenkinsBuildNumber: number | null;
   failureReason: string | null;
+  url: string | null;
   createdAt: string;
   updatedAt: string;
 
@@ -177,6 +178,27 @@ export default function DeploymentDetails() {
           <strong>Branch:</strong>{" "}
           {deployment.project.repository?.branch || "Not available"}
         </p>
+
+        {deployment.status === "SUCCESS" && deployment.url && (
+          <div style={{ marginTop: "20px" }}>
+            <a
+              href={deployment.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                padding: "10px 18px",
+                backgroundColor: "#16a34a",
+                color: "white",
+                borderRadius: "8px",
+                textDecoration: "none",
+                fontWeight: "bold",
+              }}
+            >
+              Open Application ↗
+            </a>
+          </div>
+        )}
 
         <p style={{ marginTop: "12px" }}>
           <strong>Jenkins Build:</strong>{" "}

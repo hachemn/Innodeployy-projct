@@ -1,11 +1,14 @@
 import api from "../api/axios";
 
-export async function createDeployment(projectId: number) {
+export async function createDeployment(
+  projectId: number,
+  deployTarget: "local" | "aws" = "local"
+) {
   const token = localStorage.getItem("token");
 
   const response = await api.post(
     `/projects/${projectId}/deployments`,
-    {},
+    { deployTarget },
     {
       headers: {
         Authorization: `Bearer ${token}`,

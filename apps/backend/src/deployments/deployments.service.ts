@@ -29,7 +29,15 @@ export class DeploymentsService {
   private async verifyDeployment(
     appName: string,
     expectedImage: string,
+    deployTarget: 'local' | 'aws',
   ): Promise<void> {
+    const kubectlConfigArgs =
+      deployTarget === 'aws'
+        ? ['--kubeconfig', `${process.env.HOME}/.kube/innodeployy-aws-config`]
+        : [];
+
+    const argocdAppName =
+      deployTarget === 'aws' ? `${appName}-aws` : appName;
     const timeout = 5 * 60 * 1000;
     const pollInterval = 5000;
     const deadline = Date.now() + timeout;
@@ -40,9 +48,10 @@ export class DeploymentsService {
         const { stdout: appOutput } = await execFileAsync(
           '/snap/bin/kubectl',
           [
+            ...kubectlConfigArgs,
             'get',
             'application',
-            appName,
+            argocdAppName,
             '-n',
             'argocd',
             '-o',
@@ -59,6 +68,7 @@ export class DeploymentsService {
         const { stdout: deploymentOutput } = await execFileAsync(
           '/snap/bin/kubectl',
           [
+            ...kubectlConfigArgs,
             'get',
             'deployment',
             appName,
@@ -121,7 +131,7 @@ export class DeploymentsService {
    * Creates a deployment, triggers Jenkins, and verifies the
    * resulting deployment in Argo CD and Kubernetes.
    */
-  async create(projectId: number, userId: number) {
+  async create(projectId: number, userId: number, deployTarget: 'local' | 'aws' = 'local') {
     console.log('CREATE DEPLOYMENT STARTED');
     console.log('Project ID:', projectId);
     console.log('User ID:', userId);
@@ -168,7 +178,21 @@ export class DeploymentsService {
 
       const appName = `${appSlug}-${projectId}`;
 
+      const awsAppDomain = process.env.AWS_APP_DOMAIN?.trim();
+
+      if (deployTarget === 'aws' && !awsAppDomain) {
+        throw new Error('AWS_APP_DOMAIN is not configured.');
+      }
+
+      const appHost =
+        deployTarget === 'aws'
+          ? `${appName}.app.${awsAppDomain}`
+          : undefined;
+
       console.log('Application name:', appName);
+      if (appHost) {
+        console.log('Application hostname:', appHost);
+      }
       console.log('Repository:', repository.url);
       console.log('Branch:', repository.branch);
 
@@ -179,6 +203,8 @@ export class DeploymentsService {
           repository.url,
           repository.branch,
           appName,
+          deployTarget,
+          appHost,
         );
 
       console.log('Jenkins build number:', result.buildNumber);
@@ -225,6 +251,7 @@ export class DeploymentsService {
       await this.verifyDeployment(
         appName,
         expectedImage,
+        deployTarget,
       );
 
       // Mark SUCCESS only after Kubernetes confirms readiness.
@@ -235,6 +262,7 @@ export class DeploymentsService {
         data: {
           status: DeploymentStatus.SUCCESS,
           failureReason: null,
+          url: appHost ? `http://${appHost}` : null,
         },
       });
     } catch (error) {

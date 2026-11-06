@@ -17,6 +17,7 @@ export default function Deploy() {
   const { projectId } = useParams();
 
   const [loading, setLoading] = useState(false);
+  const [deployTarget, setDeployTarget] = useState<"local" | "aws">("local");
   const [message, setMessage] = useState("");
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   useEffect(() => {
@@ -50,7 +51,7 @@ export default function Deploy() {
       console.log("🚀 Starting deployment...");
       console.log("Project ID:", projectId);
 
-      const result = await createDeployment(Number(projectId));
+      const result = await createDeployment(Number(projectId), deployTarget);
 
       console.log("✅ Deployment response:", result);
 
@@ -241,6 +242,39 @@ export default function Deploy() {
             Start a new deployment. InnoDeploy will trigger the CI/CD
             pipeline and deploy the application.
           </p>
+
+          <label
+            htmlFor="deployTarget"
+            style={{
+              display: "block",
+              marginBottom: "8px",
+              color: "#374151",
+              fontWeight: "600",
+            }}
+          >
+            Deployment environment
+          </label>
+
+          <select
+            id="deployTarget"
+            value={deployTarget}
+            onChange={(event) =>
+              setDeployTarget(event.target.value as "local" | "aws")
+            }
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "12px",
+              marginBottom: "18px",
+              border: "1px solid #d1d5db",
+              borderRadius: "8px",
+              backgroundColor: "#ffffff",
+              fontSize: "14px",
+            }}
+          >
+            <option value="local">Local Kubernetes</option>
+            <option value="aws">AWS (Amazon Web Services)</option>
+          </select>
 
           <button
             onClick={handleDeploy}
