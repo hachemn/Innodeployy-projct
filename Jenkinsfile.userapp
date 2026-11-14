@@ -79,19 +79,71 @@ pipeline {
             }
         }
 
-        stage('Validate Dockerfile') {
+        stage('Prepare Application') {
             steps {
                 dir('user-app') {
                     sh '''
                         set -eu
 
-                        if [ ! -f Dockerfile ]; then
-                            echo "ERROR: The repository must contain a Dockerfile."
+                        if [ -f Dockerfile ]; then
+                            echo "Using existing Dockerfile."
+                            APP_PORT=$(awk '/^[[:space:]]*EXPOSE[[:space:]]+/ {print $2; exit}' Dockerfile | cut -d/ -f1)
+                            if [ -z "$APP_PORT" ]; then
+                                echo "ERROR: Dockerfile must declare the application port using EXPOSE."
+                                exit 1
+                            fi
+
+                        elif [ -f package.json ] && grep -q '"vite"' package.json; then
+                            echo "Vite application detected."
+                            APP_PORT=80
+                            cat > Dockerfile <<'EOF'
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY . .
+RUN npm run build
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+
+                        elif [ -f package.json ]; then
+                            echo "Node.js application detected."
+                            APP_PORT=3000
+                            cat > Dockerfile <<'EOF'
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+EOF
+
+                        elif [ -f index.html ]; then
+                            echo "Static HTML application detected."
+                            APP_PORT=80
+                            cat > Dockerfile <<'EOF'
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+
+                        else
+                            echo "ERROR: Unsupported application structure."
                             exit 1
                         fi
 
-                        echo "Dockerfile found."
+                        echo "$APP_PORT" > "$WORKSPACE/app-port.txt"
+                        echo "Detected application port: $APP_PORT"
                     '''
+
+                    script {
+                        env.APP_PORT = readFile("${env.WORKSPACE}/app-port.txt").trim()
+                    }
                 }
             }
         }
@@ -188,16 +240,14 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 3000
+              containerPort: ${APP_PORT}
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
